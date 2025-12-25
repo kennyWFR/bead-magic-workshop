@@ -63,7 +63,7 @@
 
       <!-- 图纸说明 -->
       <view class="canvas-tip">
-        <text class="canvas-tip-text">💡 点击图纸，可改色号和一键高亮</text>
+        <text class="canvas-tip-text">💡 点击图纸，可以改色号和一键高亮</text>
       </view>
 
       <!-- 画布容器 -->
@@ -149,7 +149,7 @@
           </view>
           <view class="tool-btn" @tap="toggleColorMerge">
             <text class="tool-icon">{{ colorMerged ? '🔓' : '🔗' }}</text>
-            <text class="tool-label">{{ colorMerged ? '解除合并' : '颜色合并' }}</text>
+            <text class="tool-label">{{ colorMerged ? '解除合并' : '相近颜色合并' }}</text>
           </view>
           <view class="tool-btn" @tap="toggleDenseLayout">
             <text class="tool-icon">{{ denseLayoutIcon }}</text>
@@ -180,7 +180,7 @@
                   v-model.number="colorMergeThreshold"
                   type="number"
                   class="setting-input"
-                  placeholder="5"
+                  placeholder="10"
                   min="1"
                   max="20"
                 />
@@ -196,17 +196,22 @@
       <view class="work-info-section">
         <view class="work-info-header">
           <text class="work-info-title">作品信息</text>
-          <text class="work-info-tip">导出长图时添加署名标记</text>
+          <text class="work-info-tip">导出时添加水印</text>
         </view>
         <view class="work-info-inputs">
           <view class="work-info-item">
             <text class="work-info-label">水印内容</text>
-            <input
-              v-model="watermarkText"
-              class="work-info-input"
-              placeholder="请输入水印内容（可选）"
-              maxlength="30"
-            />
+            <view class="watermark-input-wrapper">
+              <input
+                v-model="watermarkText"
+                class="work-info-input"
+                placeholder="请输入水印内容（可选）"
+                maxlength="30"
+              />
+              <view class="watermark-save-btn" @tap="handleSaveWatermark">
+                <text class="watermark-save-text">保存</text>
+              </view>
+            </view>
           </view>
         </view>
       </view>
@@ -378,6 +383,7 @@ import type { BrandKey, PaletteColor, ColorAlgorithm } from '../types/index';
 import { findClosestColorLab } from '@/utils/colorMatcher';
 import { BRAND_LIST, getBrandPalette } from '@/utils/paletteData';
 import { preprocessImageData, getDominantColor } from '@/utils/imageProcessor';
+import { checkText, getSecurityErrorMessage } from '@/utils/securityCheck';
 
 // ============================================
 // 类型定义
@@ -501,10 +507,11 @@ const lastSelectedColor = ref<PaletteColor | null>(null);
 // 作品信息
 const workName = ref<string>('');
 const authorName = ref<string>('');
-const watermarkText = ref<string>(''); // 水印内容
+const watermarkText = ref<string>(''); // 水印内容（输入框中的内容）
+const savedWatermarkText = ref<string>(''); // 成功保存的水印内容（用于导出）
 
 // 颜色合并阈值
-const colorMergeThreshold = ref<number>(5); // 默认值为5
+const colorMergeThreshold = ref<number>(10); // 默认值为10
 
 // ============================================
 // 计算属性
@@ -2132,6 +2139,66 @@ function handleBack() {
   uni.navigateBack();
 }
 
+// 保存水印内容（需要先通过文本安全检测）
+async function handleSaveWatermark() {
+  // 如果为空，直接清空保存的水印
+  if (!watermarkText.value.trim()) {
+    savedWatermarkText.value = '';
+    uni.showToast({
+      title: '已清空水印',
+      icon: 'success',
+      duration: 1500
+    });
+    return;
+  }
+
+  try {
+    uni.showLoading({ title: '检测中...', mask: true });
+    
+    // 调用文本内容安全检测（同步接口）
+    const checkResult = await checkText(watermarkText.value, 1);
+    
+    uni.hideLoading();
+    
+    if (!checkResult.success) {
+      // 检测失败，有违规风险
+      if (checkResult.errCode === 87014) {
+        // 内容违规
+        uni.showModal({
+          title: '提示',
+          content: getSecurityErrorMessage(checkResult.errCode),
+          showCancel: false,
+          confirmText: '我知道了'
+        });
+      } else {
+        // 其他错误
+        uni.showToast({
+          title: getSecurityErrorMessage(checkResult.errCode) || '检测失败，请重试',
+          icon: 'none',
+          duration: 2000
+        });
+      }
+      return; // 禁止保存
+    }
+    
+    // 检测通过，保存水印内容
+    savedWatermarkText.value = watermarkText.value;
+    uni.showToast({
+      title: '保存成功',
+      icon: 'success',
+      duration: 1500
+    });
+  } catch (error: any) {
+    uni.hideLoading();
+    console.error('保存水印失败:', error);
+    uni.showToast({
+      title: '保存失败，请重试',
+      icon: 'none',
+      duration: 2000
+    });
+  }
+}
+
 // ============================================
 // 导出功能
 // ============================================
@@ -2274,8 +2341,8 @@ function canvasToTempFilePath(): Promise<string> {
  * 注意：使用processCanvas添加水印，不影响displayCanvas
  */
 async function canvasToTempFilePathWithWatermark(): Promise<string> {
-  if (!watermarkText.value) {
-    // 如果没有水印，直接导出
+  if (!savedWatermarkText.value) {
+    // 如果没有保存的水印，直接导出
     return await canvasToTempFilePath();
   }
   
@@ -2337,7 +2404,7 @@ async function canvasToTempFilePathWithWatermark(): Promise<string> {
             processCtx.save();
             processCtx.translate(x, y);
             processCtx.rotate(angle);
-            processCtx.fillText(watermarkText.value, 0, 0);
+            processCtx.fillText(savedWatermarkText.value, 0, 0);
             processCtx.restore();
           }
         }
@@ -2522,7 +2589,7 @@ async function drawPoster(snapshotPath: string, layout: PosterLayout, items: BOM
   drawPosterBOM(layout, items); // 密集排列的色号清单
   
   // 添加稀疏倾斜重复水印（如果有）
-  if (watermarkText.value && posterCtx) {
+  if (savedWatermarkText.value && posterCtx) {
     posterCtx.save();
     posterCtx.globalAlpha = 0.15; // 更透明
     posterCtx.fillStyle = '#000000';
@@ -2550,7 +2617,7 @@ async function drawPoster(snapshotPath: string, layout: PosterLayout, items: BOM
         posterCtx.save();
         posterCtx.translate(x, y);
         posterCtx.rotate(angle);
-        posterCtx.fillText(watermarkText.value, 0, 0);
+        posterCtx.fillText(savedWatermarkText.value, 0, 0);
         posterCtx.restore();
       }
     }
@@ -3586,8 +3653,27 @@ function exportBOMList() {
   color: #2D3436;
 }
 
+.watermark-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.watermark-save-btn {
+  padding: 16rpx 32rpx;
+  background-color: #6C5CE7;
+  border-radius: 8rpx;
+  flex-shrink: 0;
+}
+
+.watermark-save-text {
+  font-size: 28rpx;
+  color: #FFFFFF;
+  font-weight: 500;
+}
+
 .work-info-input {
-  width: 100%;
+  flex: 1;
   height: 80rpx;
   padding: 0 24rpx;
   border: 2rpx solid #E5E5E5;

@@ -12,7 +12,7 @@
       <view class="section">
         <view class="section-title">
           <text class="label">图片类型</text>
-          <text class="badge">{{ imageType === 'standard' ? '标准图片' : '像素图片' }}</text>
+          <text class="badge">{{ imageType === 'standard' ? '标准图案' : '像素网格' }}</text>
         </view>
 
         <view class="type-selector">
@@ -21,16 +21,18 @@
             :class="{ 'type-option-active': imageType === 'standard' }"
             @tap="handleImageTypeSelect('standard')"
           >
-            <text class="type-icon">🖼️</text>
-            <text class="type-text">标准图片</text>
+            <text class="type-icon">🎨</text>
+            <text class="type-text">标准图案</text>
+            <text class="type-hint">适合大部分图片</text>
           </view>
           <view
             class="type-option"
             :class="{ 'type-option-active': imageType === 'pixel' }"
             @tap="handleImageTypeSelect('pixel')"
           >
-            <text class="type-icon">🎨</text>
-            <text class="type-text">像素图片</text>
+            <text class="type-icon">🖼️</text>
+            <text class="type-text">像素网格</text>
+            <text class="type-hint">适合图纸标色号</text>
           </view>
         </view>
       </view>
@@ -38,7 +40,7 @@
       <!-- 品牌选择器 -->
       <view class="section">
         <view class="section-title">
-          <text class="label">选择品牌</text>
+          <text class="label">拼豆品牌</text>
           <text class="badge">{{ selectedBrandInfo?.displayName }}</text>
         </view>
 
@@ -68,7 +70,7 @@
           </view>
         </view>
 
-        <!-- 标准图片模式 -->
+        <!-- 标准图案模式 -->
         <view v-if="imageType === 'standard'" class="upload-area" @tap="handleChooseImage">
           <image
             v-if="imagePath"
@@ -87,7 +89,7 @@
           <view v-if="!imagePath" class="upload-area" @tap="handleChooseImage">
             <view class="upload-placeholder">
               <text class="upload-icon">+</text>
-              <text class="upload-text">点击上传像素图片</text>
+              <text class="upload-text">点击上传图片</text>
             </view>
           </view>
           <view v-else class="pixel-editor-container">
@@ -125,6 +127,11 @@
           </view>
         </view>
 
+        <!-- 图片检测提示 -->
+        <view class="upload-hint">
+          <text class="upload-hint-text">根据微信要求，上传图片需进行合规检测</text>
+        </view>
+
         <!-- 网格比例滑动条（仅像素图片模式显示） -->
         <view v-if="imageType === 'pixel'" class="section pixel-grid-section">
           <view class="section-title">
@@ -145,7 +152,7 @@
             <slider
               :value="pixelBlockSizeRatio * 100"
               :min="1"
-              :max="10"
+              :max="5"
               :step="0.01"
               activeColor="#6C5CE7"
               backgroundColor="#E5E5E5"
@@ -155,7 +162,7 @@
             />
             <view class="slider-labels">
               <text class="slider-label">1%</text>
-              <text class="slider-label">10%</text>
+              <text class="slider-label">5%</text>
             </view>
           </view>
           <view class="tip tip-secondary">
@@ -165,10 +172,10 @@
         </view>
       </view>
 
-      <!-- 尺寸设置（仅标准图片模式显示） -->
+      <!-- 尺寸设置（仅标准图案模式显示） -->
       <view v-if="imageType === 'standard'" class="section">
         <view class="section-title">
-          <text class="label">拼豆宽度</text>
+          <text class="label">拼豆板尺寸</text>
           <text class="value">{{ beadWidth }} 颗</text>
         </view>
 
@@ -191,7 +198,7 @@
         </view>
         <view class="tip tip-secondary">
           <text class="tip-icon">✨</text>
-          <text class="tip-text">拼豆宽度越大，图纸越精美哦</text>
+          <text class="tip-text">尺寸越大，图纸越精美哦～</text>
         </view>
       </view>
 
@@ -222,8 +229,10 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, watch } from 'vue';
+import { onShow } from '@dcloudio/uni-app';
 import type { BrandKey } from '@/types/index';
 import { BRAND_LIST } from '@/utils/paletteData';
+import { checkImage, compressImage, getSecurityErrorMessage, prepareWatchConnection } from '@/utils/securityCheck';
 
 const brandList = BRAND_LIST;
 
@@ -235,8 +244,8 @@ const imageType = ref<'standard' | 'pixel'>('standard');
 // 像素图片模式相关状态
 const pixelEditorContainerHeight = ref(500); // px
 const pixelEditorContainerWidth = ref(0); // px
-const pixelBlockSizeRatio = ref(0.02); // 网格宽度相对于图片宽度的比例，范围0.01-0.1（1%-10%），支持两位小数，默认2%
-const sectionValueInput = ref('2.00'); // 标题栏输入框的显示值
+const pixelBlockSizeRatio = ref(0.03); // 网格宽度相对于图片宽度的比例，范围0.01-0.05（1%-5%），支持两位小数，默认3%
+const sectionValueInput = ref('3.00'); // 标题栏输入框的显示值
 const pixelImageWidth = ref(0); // 图片显示宽度（px）
 const pixelImageScale = ref(1); // 图片缩放比例
 const pixelImageOffsetX = ref(0); // 图片X偏移（px）
@@ -417,18 +426,94 @@ const handleChooseImage = () => {
     count: 1,
     sizeType: ['compressed'],
     sourceType: ['album', 'camera'],
-    success: (res) => {
-      imagePath.value = res.tempFilePaths[0];
-      if (typeof uni.vibrateShort === 'function') {
-        uni.vibrateShort({
-          type: 'medium'
-        });
-      }
-      
-      // 如果是像素图片模式，初始化图片信息
-      if (imageType.value === 'pixel') {
-        nextTick(() => {
-          initPixelImageInfo();
+    success: async (res) => {
+      const tempPath = res.tempFilePaths[0];
+      console.log('[securityCheck] chooseImage success, path=', tempPath);
+
+      try {
+        const totalStartTime = Date.now();
+        const formatTimestamp = () => {
+          const now = new Date();
+          const year = now.getFullYear();
+          const month = String(now.getMonth() + 1).padStart(2, '0');
+          const day = String(now.getDate()).padStart(2, '0');
+          const hours = String(now.getHours()).padStart(2, '0');
+          const minutes = String(now.getMinutes()).padStart(2, '0');
+          const seconds = String(now.getSeconds()).padStart(2, '0');
+          const milliseconds = String(now.getMilliseconds()).padStart(3, '0');
+          return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${milliseconds}`;
+        };
+        
+        console.log(`[securityCheck] [${formatTimestamp()}] ========== 图片检测流程开始 ==========`);
+        
+        uni.showLoading({ title: '正在压缩图片...', mask: true });
+
+        // 压缩到约100KB，减少上传与检测耗时
+        const compressStartTime = Date.now();
+        console.log(`[securityCheck] [${formatTimestamp()}] 开始压缩图片...`);
+        const compressedPath = await compressImage(tempPath, 100);
+        const compressTime = Date.now() - compressStartTime;
+        console.log(`[securityCheck] [${formatTimestamp()}] 图片压缩完成，耗时: ${compressTime} ms`);
+        console.log('[securityCheck] compressedPath=', compressedPath);
+
+        // 更新加载提示
+        uni.showLoading({ title: '正在上传图片...', mask: true });
+
+        // 调用云函数进行内容安全检测（会自动等待异步结果）
+        const checkStartTime = Date.now();
+        console.log(`[securityCheck] [${formatTimestamp()}] 开始图片安全检测...`);
+        
+        // 在 checkImage 内部更新提示
+        const checkResult = await checkImage(compressedPath, 1);
+        const checkTime = Date.now() - checkStartTime;
+        console.log(`[securityCheck] [${formatTimestamp()}] 图片安全检测完成，耗时: ${checkTime} ms`);
+        console.log('[securityCheck] checkImage result=', checkResult);
+
+        const totalTime = Date.now() - totalStartTime;
+        console.log(`[securityCheck] [${formatTimestamp()}] ========== 图片检测流程结束 ==========`);
+        console.log(`[securityCheck] [${formatTimestamp()}] 总耗时: ${totalTime} ms`);
+        console.log(`[securityCheck] [${formatTimestamp()}] 压缩耗时: ${compressTime} ms (${((compressTime / totalTime) * 100).toFixed(1)}%)`);
+        console.log(`[securityCheck] [${formatTimestamp()}] 检测耗时: ${checkTime} ms (${((checkTime / totalTime) * 100).toFixed(1)}%)`);
+
+        uni.hideLoading();
+
+        if (!checkResult?.success) {
+          const msg = getSecurityErrorMessage(checkResult?.errCode ?? -1);
+          if (checkResult?.errCode === 87014) {
+            uni.showModal({
+              title: '违规提示',
+              content: msg,
+              showCancel: false
+            });
+          } else {
+            uni.showToast({
+              title: msg,
+              icon: 'none'
+            });
+          }
+          return; // 阻断后续逻辑
+        }
+
+        // 检测通过，保存路径并继续
+        imagePath.value = compressedPath;
+        if (typeof uni.vibrateShort === 'function') {
+          uni.vibrateShort({
+            type: 'medium'
+          });
+        }
+        
+        // 如果是像素图片模式，初始化图片信息
+        if (imageType.value === 'pixel') {
+          nextTick(() => {
+            initPixelImageInfo();
+          });
+        }
+      } catch (err: any) {
+        uni.hideLoading();
+        console.error('[securityCheck] chooseImage error:', err);
+        uni.showToast({
+          title: err?.message || '检测失败，请重试',
+          icon: 'none'
         });
       }
     },
@@ -542,12 +627,12 @@ const handleSliderChanging = (e: any) => {
 
 // 像素图片模式：网格比例滑动条处理
 const handlePixelBlockSizeRatioChange = (e: any) => {
-  const newRatio = Math.max(0.01, Math.min(0.1, e.detail.value / 100));
+  const newRatio = Math.max(0.01, Math.min(0.05, e.detail.value / 100));
   updatePixelBlockSizeRatio(newRatio);
 };
 
 const handlePixelBlockSizeRatioChanging = (e: any) => {
-  const newRatio = Math.max(0.01, Math.min(0.1, e.detail.value / 100));
+  const newRatio = Math.max(0.01, Math.min(0.05, e.detail.value / 100));
   updatePixelBlockSizeRatio(newRatio);
 };
 
@@ -582,7 +667,7 @@ const handleSectionValueInput = (e: any) => {
   sectionValueInput.value = inputValue;
   
   const numValue = parseFloat(inputValue);
-  if (!isNaN(numValue) && numValue >= 1 && numValue <= 10) {
+  if (!isNaN(numValue) && numValue >= 1 && numValue <= 5) {
     const newRatio = numValue / 100; // 直接转换，不四舍五入
     pixelBlockSizeRatio.value = newRatio;
     // 输入框已同步更新
@@ -596,8 +681,8 @@ const handleSectionValueBlur = (e: any) => {
   
   if (isNaN(numValue) || numValue < 1) {
     updatePixelBlockSizeRatio(0.01);
-  } else if (numValue > 10) {
-    updatePixelBlockSizeRatio(0.1);
+  } else if (numValue > 5) {
+    updatePixelBlockSizeRatio(0.05);
   } else {
     // 确保格式化为两位小数，但不改变实际值
     const formattedValue = numValue.toFixed(2);
@@ -656,8 +741,23 @@ onMounted(() => {
   pixelEditorContainerHeight.value = 500 * rpxToPx;
   pixelEditorContainerWidth.value = systemInfo.windowWidth - 64 * rpxToPx; // 减去padding
   // 初始化网格比例
-  pixelBlockSizeRatio.value = 0.02; // 默认2%
-  sectionValueInput.value = '2.00';
+  pixelBlockSizeRatio.value = 0.03; // 默认3%
+  sectionValueInput.value = '3.00';
+
+  // 预热数据库监听，减少检测时的建链耗时
+  // 如果 App.vue 中已经预热过，这里会直接返回（不会重复建立）
+  prepareWatchConnection().catch((e) => {
+    console.warn('[securityCheck] prepareWatchConnection 失败：', e);
+  });
+});
+
+// 页面显示时也检查并预热连接（如果超过 5 分钟未预热，重新预热以保持连接活跃）
+onShow(() => {
+  // #ifdef MP-WEIXIN
+  prepareWatchConnection().catch((e) => {
+    console.warn('[securityCheck] onShow prepareWatchConnection 失败：', e);
+  });
+  // #endif
 });
 </script>
 
@@ -803,7 +903,7 @@ onMounted(() => {
 }
 
 .type-text {
-  font-size: 26rpx;
+  font-size: 28rpx;
   color: #636E72;
   font-weight: 500;
 }
@@ -811,6 +911,17 @@ onMounted(() => {
 .type-option-active .type-text {
   color: #FFFFFF;
   font-weight: 600;
+}
+
+.type-hint {
+  font-size: 22rpx;
+  color: #95A5A6;
+  margin-top: 4rpx;
+  font-weight: 400;
+}
+
+.type-option-active .type-hint {
+  color: rgba(255, 255, 255, 0.8);
 }
 
 .brand-chips {
@@ -883,6 +994,17 @@ onMounted(() => {
 .upload-text {
   font-size: 28rpx;
   color: #636E72;
+}
+
+.upload-hint {
+  margin-top: 16rpx;
+  padding: 0 8rpx;
+}
+
+.upload-hint-text {
+  font-size: 24rpx;
+  color: #95A5A6;
+  line-height: 1.5;
 }
 
 .preview-image {
