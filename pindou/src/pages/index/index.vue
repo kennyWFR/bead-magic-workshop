@@ -424,7 +424,8 @@ const handleImageTypeSelect = (type: 'standard' | 'pixel') => {
 const handleChooseImage = () => {
   uni.chooseImage({
     count: 1,
-    sizeType: ['compressed'],
+    // 制图用相册原图；风控仍对 compressImage 后的低分辨率图送检
+    sizeType: ['original'],
     sourceType: ['album', 'camera'],
     success: async (res) => {
       const tempPath = res.tempFilePaths[0];
@@ -446,11 +447,11 @@ const handleChooseImage = () => {
         
         console.log(`[securityCheck] [${formatTimestamp()}] ========== 图片检测流程开始 ==========`);
         
-        uni.showLoading({ title: '正在压缩图片...', mask: true });
+        uni.showLoading({ title: '正在压缩用于检测...', mask: true });
 
-        // 压缩到约100KB，减少上传与检测耗时
+        // 仅用于风控：低分辨率小图；制图仍使用下方 tempPath（选图原临时文件）
         const compressStartTime = Date.now();
-        console.log(`[securityCheck] [${formatTimestamp()}] 开始压缩图片...`);
+        console.log(`[securityCheck] [${formatTimestamp()}] 开始压缩检测用图...`);
         const compressedPath = await compressImage(tempPath);
         const compressTime = Date.now() - compressStartTime;
         console.log(`[securityCheck] [${formatTimestamp()}] 图片压缩完成，耗时: ${compressTime} ms`);
@@ -494,8 +495,8 @@ const handleChooseImage = () => {
           return; // 阻断后续逻辑
         }
 
-        // 检测通过，保存路径并继续
-        imagePath.value = compressedPath;
+        // 检测通过：预览与生成图纸用原图路径；compressedPath 仅用于本次检测，不再沿用
+        imagePath.value = tempPath;
         if (typeof uni.vibrateShort === 'function') {
           uni.vibrateShort({
             type: 'medium'
