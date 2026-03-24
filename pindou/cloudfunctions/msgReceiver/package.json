@@ -1,0 +1,10 @@
+{
+  "name": "msgReceiver",
+  "version": "1.0.0",
+  "description": "消息推送接收云函数",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "latest"
+  }
+}
+

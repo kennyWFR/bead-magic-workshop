@@ -451,7 +451,7 @@ const handleChooseImage = () => {
         // 压缩到约100KB，减少上传与检测耗时
         const compressStartTime = Date.now();
         console.log(`[securityCheck] [${formatTimestamp()}] 开始压缩图片...`);
-        const compressedPath = await compressImage(tempPath, 100);
+        const compressedPath = await compressImage(tempPath);
         const compressTime = Date.now() - compressStartTime;
         console.log(`[securityCheck] [${formatTimestamp()}] 图片压缩完成，耗时: ${compressTime} ms`);
         console.log('[securityCheck] compressedPath=', compressedPath);
